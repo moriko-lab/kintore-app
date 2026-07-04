@@ -349,7 +349,7 @@ async function startTimer() {
   const sec = await getSetting('timerSec', 90);
   state.timerEndAt = Date.now() + sec * 1000;
   $timerBar.classList.remove('hidden');
-  requestNotifyPermission(); // ユーザー操作起点のここでしか許可を求められない
+  unlockAudio(); // iOS はユーザー操作起点でしか音声を有効化できないため、開始時に解錠しておく
   requestWakeLock();
   clearInterval(state.timerId);
   state.timerId = setInterval(tickTimer, 500);
@@ -361,8 +361,7 @@ function tickTimer() {
   updateTimerLabel();
   if (state.timerRemain <= 0) {
     stopTimer();
-    beep();
-    notifyTimerDone();
+    playAlarm();
   }
 }
 
@@ -380,18 +379,36 @@ function releaseWakeLock() {
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 }
 
-function requestNotifyPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission().catch(() => {});
-  }
+// アラーム音: タイマー開始（ユーザー操作）時に AudioContext を解錠しておき、
+// 満了時に約1.6秒のパルス音を鳴らして自動停止する
+let audioCtx = null;
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { /* 音が出せない環境では無視 */ }
 }
 
-async function notifyTimerDone() {
+function playAlarm() {
   try {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (reg) reg.showNotification('休憩終了', { body: '次のセットへ', tag: 'rest-timer' });
-  } catch (e) { /* 通知不可の環境では無視 */ }
+    if (!audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    for (let i = 0; i < 4; i++) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'square';
+      osc.frequency.value = i % 2 ? 660 : 880;
+      const start = t0 + i * 0.4;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.3, start + 0.02);
+      gain.gain.setValueAtTime(0.3, start + 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.38);
+      osc.start(start);
+      osc.stop(start + 0.4);
+    }
+  } catch (e) { /* 音が出せない環境では無視 */ }
 }
 
 function updateTimerLabel() {
@@ -408,19 +425,6 @@ function stopTimer() {
 
 document.getElementById('timer-stop').onclick = stopTimer;
 document.getElementById('timer-plus').onclick = () => { state.timerEndAt += 30000; tickTimer(); };
-
-function beep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.6);
-  } catch (e) { /* 音が出せない環境では無視 */ }
-}
 
 // ---------- グラフ ----------
 
