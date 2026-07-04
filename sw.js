@@ -1,6 +1,6 @@
 // オフライン対応 Service Worker
 // CACHE_VERSION を上げると全ファイルが再取得される（デプロイ時に更新すること）
-const CACHE_VERSION = 'kintore-v10';
+const CACHE_VERSION = 'kintore-v11';
 const ASSETS = [
   './',
   './index.html',

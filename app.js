@@ -658,6 +658,14 @@ async function renderSettings() {
       </div>
     </section>
     <section class="card">
+      <h2>種目の管理</h2>
+      ${exRows || '<p class="note">種目が未登録です</p>'}
+    </section>
+    <section class="card">
+      <h2>データ概要</h2>
+      <p class="note">記録日数: ${state.sessions.length}日 / 種目数: ${state.exercises.length}</p>
+    </section>
+    <section class="card">
       <h2>エクスポート</h2>
       <p class="note">記録データはこの端末のブラウザ内に保存されています。定期的に書き出して iCloud 等に保存してください。</p>
       <div class="btn-row">
@@ -669,14 +677,6 @@ async function renderSettings() {
       <h2>インポート</h2>
       <p class="note">JSON 書き出しファイルから復元します（現在のデータは上書きされます）。</p>
       <input type="file" id="import-file" accept=".json,application/json">
-    </section>
-    <section class="card">
-      <h2>種目の管理</h2>
-      ${exRows || '<p class="note">種目が未登録です</p>'}
-    </section>
-    <section class="card">
-      <h2>データ概要</h2>
-      <p class="note">記録日数: ${state.sessions.length}日 / 種目数: ${state.exercises.length}</p>
     </section>
   `;
 
