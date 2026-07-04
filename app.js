@@ -112,8 +112,19 @@ function render() {
   else if (state.tab === 'settings') renderSettings();
 }
 
+// タブタップは常に各画面のデフォルト状態に戻す
+// （カレンダー: 今月 / グラフ: ALL / 設定: そのまま）
 document.querySelectorAll('#tabbar .tab').forEach(b => {
-  b.addEventListener('click', () => { state.tab = b.dataset.tab; render(); });
+  b.addEventListener('click', () => {
+    state.tab = b.dataset.tab;
+    if (b.dataset.tab === 'calendar') {
+      const now = new Date();
+      state.calYear = now.getFullYear();
+      state.calMonth = now.getMonth();
+    }
+    if (b.dataset.tab === 'graph') state.graphPart = 'ALL';
+    render();
+  });
 });
 
 function shiftDate(s, delta) {
@@ -741,7 +752,8 @@ function openModal(html) {
 function closeModal() { $modalRoot.innerHTML = ''; }
 
 // ---------- プルリフレッシュ ----------
-// 画面最上部で下に引っ張ると再読み込みする。しきい値未満で離したら何もしない
+// 画面最上部で下に引っ張ると再読み込みする。しきい値未満で離したら何もしない。
+// 再読み込み後も同じ画面に戻れるよう、表示状態を退避してから reload する
 
 const $pull = document.getElementById('pull-indicator');
 const PULL_THRESHOLD = 110;
@@ -749,15 +761,15 @@ let pullStartY = null;
 let pullDy = 0;
 
 document.addEventListener('touchstart', e => {
-  // スクロール最上部から開始したときのみ対象（モーダル表示中は無効）
-  pullStartY = (window.scrollY <= 0 && !document.querySelector('.modal')) ? e.touches[0].clientY : null;
+  // スクロール領域（#view）の最上部から開始したときのみ対象（モーダル表示中は無効）
+  pullStartY = ($view.scrollTop <= 0 && !document.querySelector('.modal')) ? e.touches[0].clientY : null;
   pullDy = 0;
 }, { passive: true });
 
 document.addEventListener('touchmove', e => {
   if (pullStartY === null) return;
   pullDy = e.touches[0].clientY - pullStartY;
-  if (pullDy > 15 && window.scrollY <= 0) {
+  if (pullDy > 15 && $view.scrollTop <= 0) {
     const shown = Math.min(pullDy / 2, 70);
     $pull.classList.remove('hidden');
     $pull.style.transform = `translateX(-50%) translateY(${shown}px)`;
@@ -769,6 +781,13 @@ document.addEventListener('touchmove', e => {
 document.addEventListener('touchend', () => {
   if (pullStartY !== null && pullDy >= PULL_THRESHOLD) {
     $pull.textContent = '更新中...';
+    sessionStorage.setItem('viewState', JSON.stringify({
+      tab: state.tab,
+      dayDate: state.dayDate,
+      graphPart: state.graphPart,
+      calYear: state.calYear,
+      calMonth: state.calMonth,
+    }));
     location.reload();
     return;
   }
@@ -793,5 +812,11 @@ document.addEventListener('touchend', () => {
   const now = new Date();
   state.calYear = now.getFullYear();
   state.calMonth = now.getMonth();
+  // プルリフレッシュ前の画面状態があれば復元する
+  const saved = sessionStorage.getItem('viewState');
+  if (saved) {
+    sessionStorage.removeItem('viewState');
+    try { Object.assign(state, JSON.parse(saved)); } catch (e) { /* 壊れていたら既定表示 */ }
+  }
   render();
 })();
