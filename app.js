@@ -9,7 +9,7 @@ const state = {
   calYear: 0,
   calMonth: 0,            // 0-11
   dayDate: null,          // 'YYYY-MM-DD'
-  graphExId: null,
+  graphPart: null,
   exercises: [],
   sessions: [],           // date 昇順
   timerId: null,
@@ -392,22 +392,24 @@ function unlockAudio() {
 function playAlarm() {
   try {
     if (!audioCtx) return;
+    // ドミソド（C5-E5-G5-C6）の上昇アルペジオ。正弦波 + ゆるやかな減衰で
+    // ベル風のやわらかい音にする。全体で約1.5秒、自動停止
     const t0 = audioCtx.currentTime;
-    for (let i = 0; i < 4; i++) {
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((freq, i) => {
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-      osc.type = 'square';
-      osc.frequency.value = i % 2 ? 660 : 880;
-      const start = t0 + i * 0.4;
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const start = t0 + i * 0.16;
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.3, start + 0.02);
-      gain.gain.setValueAtTime(0.3, start + 0.25);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.38);
+      gain.gain.exponentialRampToValueAtTime(0.22, start + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
       osc.start(start);
-      osc.stop(start + 0.4);
-    }
+      osc.stop(start + 0.95);
+    });
   } catch (e) { /* 音が出せない環境では無視 */ }
 }
 
@@ -424,47 +426,55 @@ function stopTimer() {
 }
 
 document.getElementById('timer-stop').onclick = stopTimer;
-document.getElementById('timer-plus').onclick = () => { state.timerEndAt += 30000; tickTimer(); };
 
 // ---------- グラフ ----------
 
+// 日付の短縮表記: MM-DD（曜）
+function fmtShortDate(s) {
+  return `${s.slice(5, 7)}-${s.slice(8, 10)}（${jpWeekday(s)}）`;
+}
+
 function renderGraph() {
   setHeader('推移グラフ', false);
-  const usedIds = [...new Set(state.sessions.flatMap(s => s.entries.map(e => e.exId)))];
-  const options = usedIds.map(id =>
-    `<option value="${id}"${id === state.graphExId ? ' selected' : ''}>${esc(exName(id))}</option>`).join('');
+  const usedIds = new Set(state.sessions.flatMap(s => s.entries.map(e => e.exId)));
+  const parts = PARTS.filter(p => state.exercises.some(e => e.part === p && usedIds.has(e.id)));
 
-  if (usedIds.length === 0) {
+  if (parts.length === 0) {
     $view.innerHTML = '<p class="empty-msg">記録が増えるとここに推移グラフが表示されます</p>';
     return;
   }
-  if (!usedIds.includes(state.graphExId)) state.graphExId = usedIds[0];
+  if (!parts.includes(state.graphPart)) state.graphPart = parts[0];
 
-  // 自重種目は重量ではなく回数の伸びが進捗指標になるため、グラフの軸を切り替える
-  const bw = exIsBw(state.graphExId);
+  const exList = state.exercises.filter(e => e.part === state.graphPart && usedIds.has(e.id));
+  const options = parts.map(p =>
+    `<option value="${p}"${p === state.graphPart ? ' selected' : ''}>${p}</option>`).join('');
+
+  // 部位内の種目ごとにグラフ + 直近履歴のカードを並べる
+  const cards = exList.map(ex => {
+    const rows = [];
+    for (let i = state.sessions.length - 1; i >= 0 && rows.length < 5; i--) {
+      const en = state.sessions[i].entries.find(e => e.exId === ex.id);
+      if (en) rows.push(`<div class="hist-row"><span>${fmtShortDate(state.sessions[i].date)}</span><span>${setsSummary(en.sets, !!ex.bw)}</span></div>`);
+    }
+    return `
+      <section class="card">
+        <h2>${esc(ex.name)} — ${ex.bw ? '最大回数の推移' : '最大重量の推移'}</h2>
+        <canvas class="graph-canvas" data-ex="${ex.id}" width="640" height="400"></canvas>
+        ${rows.join('')}
+      </section>`;
+  }).join('');
+
   $view.innerHTML = `
-    <select id="graph-ex" class="graph-select">${options}</select>
-    <section class="card">
-      <h2>${bw ? '最大回数の推移' : '最大重量の推移'}</h2>
-      <canvas id="graph-canvas" width="640" height="400"></canvas>
-    </section>
-    <section class="card" id="graph-history"></section>
+    <select id="graph-part" class="graph-select">${options}</select>
+    ${cards}
   `;
-  document.getElementById('graph-ex').onchange = e => {
-    state.graphExId = Number(e.target.value); render();
+  document.getElementById('graph-part').onchange = e => {
+    state.graphPart = e.target.value; render();
   };
-  drawGraph(state.graphExId);
-
-  // 直近履歴一覧
-  const rows = [];
-  for (let i = state.sessions.length - 1; i >= 0 && rows.length < 10; i--) {
-    const en = state.sessions[i].entries.find(e => e.exId === state.graphExId);
-    if (en) rows.push(`<div class="hist-row"><span>${state.sessions[i].date}</span><span>${setsSummary(en.sets, bw)}</span></div>`);
-  }
-  document.getElementById('graph-history').innerHTML = `<h2>直近の記録</h2>${rows.join('')}`;
+  $view.querySelectorAll('.graph-canvas').forEach(cv => drawGraph(Number(cv.dataset.ex), cv));
 }
 
-function drawGraph(exId) {
+function drawGraph(exId, cv) {
   const bw = exIsBw(exId);
   const points = [];
   for (const s of state.sessions) {
@@ -476,7 +486,6 @@ function drawGraph(exId) {
     }
   }
   const data = points.slice(-30);
-  const cv = document.getElementById('graph-canvas');
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height, PAD = 48;
   const fg = getComputedStyle(document.body).getPropertyValue('--fg').trim() || '#ddd';

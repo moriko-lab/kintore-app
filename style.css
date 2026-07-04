@@ -225,7 +225,7 @@ button { font-family: inherit; }
   background: var(--card); color: var(--fg);
   border: 1px solid var(--border); border-radius: 10px;
 }
-#graph-canvas { width: 100%; height: auto; }
+.graph-canvas { width: 100%; height: auto; }
 .hist-row {
   display: flex; justify-content: space-between; gap: 10px;
   padding: 7px 0; font-size: 13px;
