@@ -134,6 +134,11 @@ function shiftDate(s, delta) {
 }
 $back.addEventListener('click', () => openDay(shiftDate(state.dayDate, -1)));
 $next.addEventListener('click', () => openDay(shiftDate(state.dayDate, 1)));
+// 日別記録画面で日付タイトルをタップすると、その月のカレンダーへ戻る
+// （openDay が表示月を同期済みのため、タブを切り替えるだけでよい）
+$title.addEventListener('click', () => {
+  if (state.tab === 'day') { state.tab = 'calendar'; render(); }
+});
 
 // ---------- カレンダー ----------
 
@@ -197,7 +202,7 @@ async function renderCalendar() {
     ${banner ? `<button class="backup-banner" id="backup-banner">${banner}</button>` : ''}
     <div class="cal-nav">
       <button class="icon-btn" id="cal-prev">&#8249;</button>
-      <span class="cal-title">${y}年${m + 1}月</span>
+      <button class="cal-title" id="cal-title">${y}年${m + 1}月<span class="cal-caret">&#9662;</span></button>
       <button class="icon-btn" id="cal-next">&#8250;</button>
     </div>
     <div class="cal-grid">
@@ -215,6 +220,7 @@ async function renderCalendar() {
     state.calMonth++; if (state.calMonth > 11) { state.calMonth = 0; state.calYear++; } render();
   };
   document.getElementById('today-btn').onclick = () => openDay(today);
+  document.getElementById('cal-title').onclick = openMonthPicker;
   const $banner = document.getElementById('backup-banner');
   if ($banner) $banner.onclick = () => { state.tab = 'settings'; render(); };
   $view.querySelectorAll('.cal-cell[data-date]').forEach(c => {
@@ -227,6 +233,42 @@ async function renderCalendar() {
       state.tab = 'graph';
       render();
     });
+  });
+}
+
+// 年月ピッカー: 年は左右矢印、月は12ボタンから選ぶ
+function openMonthPicker() {
+  let year = state.calYear;
+  const modal = openModal(`
+    <h2>年月を選択</h2>
+    <div class="ym-year">
+      <button class="icon-btn" id="ym-prev">&#8249;</button>
+      <span id="ym-year">${year}年</span>
+      <button class="icon-btn" id="ym-next">&#8250;</button>
+    </div>
+    <div class="ym-grid">
+      ${Array.from({ length: 12 }, (_, i) =>
+        `<button class="ym-month" data-m="${i}">${i + 1}月</button>`).join('')}
+    </div>
+  `);
+  const highlight = () => {
+    modal.querySelectorAll('.ym-month').forEach(b => {
+      b.classList.toggle('current', year === state.calYear && Number(b.dataset.m) === state.calMonth);
+    });
+  };
+  const setYear = d => {
+    year += d;
+    modal.querySelector('#ym-year').textContent = `${year}年`;
+    highlight();
+  };
+  highlight();
+  modal.querySelector('#ym-prev').onclick = () => setYear(-1);
+  modal.querySelector('#ym-next').onclick = () => setYear(1);
+  modal.querySelectorAll('.ym-month').forEach(b => b.onclick = () => {
+    state.calYear = year;
+    state.calMonth = Number(b.dataset.m);
+    closeModal();
+    render();
   });
 }
 

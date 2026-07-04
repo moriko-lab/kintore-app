@@ -127,7 +127,28 @@ button { font-family: inherit; }
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 8px;
 }
-.cal-title { font-size: 17px; font-weight: 600; }
+.cal-title {
+  font-size: 17px; font-weight: 600;
+  background: none; border: none; color: var(--fg); cursor: pointer;
+  padding: 6px 10px;
+}
+.cal-caret { font-size: 11px; color: var(--accent); margin-left: 4px; vertical-align: middle; }
+
+/* 年月ピッカー */
+.ym-year {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  font-size: 17px; font-weight: 600; margin: 8px 0 12px;
+}
+.ym-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ym-month {
+  padding: 14px 0; font-size: 15px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+}
+.ym-month.current {
+  background: var(--accent); color: var(--accent-fg); border-color: var(--accent);
+  font-weight: 700;
+}
 .cal-grid {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
   margin-bottom: 16px;
