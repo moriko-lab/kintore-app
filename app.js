@@ -209,7 +209,8 @@ async function renderCalendar() {
     </div>`;
   }
 
-  // 部位別の経過時間（最終トレーニングから何日と何時間前か）
+  // 部位別の経過時間（最終トレーニングから何日と何時間前か）。
+  // 時間が経っている部位ほど上に並べる（次に鍛えるべき部位が先頭に来る）
   const partRows = PARTS.map(part => {
     let lastTs = null;
     for (let i = state.sessions.length - 1; i >= 0 && !lastTs; i--) {
@@ -219,19 +220,22 @@ async function renderCalendar() {
         lastTs = s.updatedAt || new Date(s.date + 'T00:00:00').getTime();
       }
     }
-    if (!lastTs) return '';
-    const mins = Math.max(0, Math.floor((Date.now() - lastTs) / 60000));
-    const days = Math.floor(mins / 1440);
-    const hours = Math.floor((mins % 1440) / 60);
-    let label;
-    if (mins < 60) label = 'さっき';
-    else if (days === 0) label = `${hours}時間前`;
-    else if (hours === 0) label = `${days}日前`;
-    else label = `${days}日${hours}時間前`;
-    const cls = days >= 7 ? 'stale' : days >= 4 ? 'warn' : 'fresh';
-    return `<div class="part-row" data-part="${part}"><span class="part-name">${part}</span>
-      <span class="part-days ${cls}">${label}</span><span class="part-arrow">&#8250;</span></div>`;
-  }).join('');
+    return lastTs ? { part, lastTs } : null;
+  }).filter(Boolean)
+    .sort((a, b) => a.lastTs - b.lastTs)
+    .map(({ part, lastTs }) => {
+      const mins = Math.max(0, Math.floor((Date.now() - lastTs) / 60000));
+      const days = Math.floor(mins / 1440);
+      const hours = Math.floor((mins % 1440) / 60);
+      let label;
+      if (mins < 60) label = 'さっき';
+      else if (days === 0) label = `${hours}時間前`;
+      else if (hours === 0) label = `${days}日前`;
+      else label = `${days}日${hours}時間前`;
+      const cls = days >= 7 ? 'stale' : days >= 4 ? 'warn' : 'fresh';
+      return `<div class="part-row" data-part="${part}"><span class="part-name">${part}</span>
+        <span class="part-days ${cls}">${label}</span><span class="part-arrow">&#8250;</span></div>`;
+    }).join('');
 
   $view.innerHTML = `
     ${banner ? `<button class="backup-banner" id="backup-banner">${banner}</button>` : ''}
