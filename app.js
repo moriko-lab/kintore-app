@@ -178,7 +178,7 @@ $title.addEventListener('click', () => {
 // ---------- カレンダー ----------
 
 async function renderCalendar() {
-  setHeader('筋トレ記録', false);
+  setHeader('PUMP', false);
 
   // バックアップ喚起: データはブラウザ内にしかないため、書き出しが古いと警告する
   let banner = '';
@@ -660,30 +660,45 @@ function drawGraph(exId, cv) {
   const px = i => data.length === 1 ? W / 2 : PAD + (W - PAD * 1.5) * i / (data.length - 1);
   const py = v => H - PAD + (PAD * 1.5 - H) * (v - yMin) / (yMax - yMin);
 
-  // 軸とグリッド
-  ctx.strokeStyle = fg; ctx.globalAlpha = 0.2; ctx.lineWidth = 1;
-  ctx.font = '20px -apple-system, sans-serif';
+  // グリッド（極薄のヘアライン）と y 軸ラベル
+  ctx.font = '19px -apple-system, sans-serif';
   for (let g = 0; g <= 4; g++) {
     const v = yMin + (yMax - yMin) * g / 4;
     const y = py(v);
+    ctx.strokeStyle = fg; ctx.globalAlpha = 0.08; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD / 2, y); ctx.stroke();
-    ctx.globalAlpha = 0.7; ctx.fillStyle = fg;
+    ctx.globalAlpha = 0.45; ctx.fillStyle = fg;
     ctx.fillText(Math.round(v * 10) / 10, 4, y + 6);
-    ctx.globalAlpha = 0.2;
+  }
+  ctx.globalAlpha = 1;
+
+  // 折れ線の下に淡いグラデーション面を敷く
+  if (data.length > 1) {
+    const grad = ctx.createLinearGradient(0, py(yMax), 0, py(yMin));
+    grad.addColorStop(0, accent + '2e');
+    grad.addColorStop(1, accent + '00');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    data.forEach((p, i) => { i === 0 ? ctx.moveTo(px(i), py(p.max)) : ctx.lineTo(px(i), py(p.max)); });
+    ctx.lineTo(px(data.length - 1), py(yMin));
+    ctx.lineTo(px(0), py(yMin));
+    ctx.closePath();
+    ctx.fill();
   }
 
-  // 折れ線
-  ctx.globalAlpha = 1; ctx.strokeStyle = accent; ctx.lineWidth = 3;
+  // 折れ線（丸端・丸継ぎ）
+  ctx.strokeStyle = accent; ctx.lineWidth = 4;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.beginPath();
   data.forEach((p, i) => { i === 0 ? ctx.moveTo(px(i), py(p.max)) : ctx.lineTo(px(i), py(p.max)); });
   ctx.stroke();
   ctx.fillStyle = accent;
   data.forEach((p, i) => {
-    ctx.beginPath(); ctx.arc(px(i), py(p.max), 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px(i), py(p.max), 5.5, 0, Math.PI * 2); ctx.fill();
   });
 
   // x 軸ラベル（最初・中間・最後）
-  ctx.fillStyle = fg; ctx.globalAlpha = 0.7;
+  ctx.fillStyle = fg; ctx.globalAlpha = 0.45;
   const labelIdx = [...new Set([0, Math.floor((data.length - 1) / 2), data.length - 1])];
   labelIdx.forEach(i => {
     const t = data[i].date.slice(5).replace('-', '/');
