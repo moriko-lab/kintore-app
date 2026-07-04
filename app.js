@@ -178,8 +178,8 @@ async function renderCalendar() {
     else if (hours === 0) label = `${days}日前`;
     else label = `${days}日${hours}時間前`;
     const cls = days >= 7 ? 'stale' : days >= 4 ? 'warn' : 'fresh';
-    return `<div class="part-row"><span class="part-name">${part}</span>
-      <span class="part-days ${cls}">${label}</span></div>`;
+    return `<div class="part-row" data-part="${part}"><span class="part-name">${part}</span>
+      <span class="part-days ${cls}">${label}</span><span class="part-arrow">&#8250;</span></div>`;
   }).join('');
 
   $view.innerHTML = `
@@ -208,6 +208,14 @@ async function renderCalendar() {
   if ($banner) $banner.onclick = () => { state.tab = 'settings'; render(); };
   $view.querySelectorAll('.cal-cell[data-date]').forEach(c => {
     c.addEventListener('click', () => openDay(c.dataset.date));
+  });
+  // 部位行タップでその部位のグラフへ
+  $view.querySelectorAll('.part-row[data-part]').forEach(r => {
+    r.addEventListener('click', () => {
+      state.graphPart = r.dataset.part;
+      state.tab = 'graph';
+      render();
+    });
   });
 }
 
@@ -471,10 +479,14 @@ function renderGraph() {
     $view.innerHTML = '<p class="empty-msg">記録が増えるとここに推移グラフが表示されます</p>';
     return;
   }
-  if (!parts.includes(state.graphPart)) state.graphPart = parts[0];
+  // 既定は ALL（全部位の種目を部位順に表示）
+  if (state.graphPart !== 'ALL' && !parts.includes(state.graphPart)) state.graphPart = 'ALL';
 
-  const exList = state.exercises.filter(e => e.part === state.graphPart && usedIds.has(e.id));
-  const options = parts.map(p =>
+  const all = state.graphPart === 'ALL';
+  const exList = state.exercises
+    .filter(e => usedIds.has(e.id) && (all || e.part === state.graphPart))
+    .sort((a, b) => PARTS.indexOf(a.part) - PARTS.indexOf(b.part));
+  const options = ['ALL', ...parts].map(p =>
     `<option value="${p}"${p === state.graphPart ? ' selected' : ''}>${p}</option>`).join('');
 
   // 部位内の種目ごとにグラフ + 直近履歴のカードを並べる
@@ -486,7 +498,7 @@ function renderGraph() {
     }
     return `
       <section class="card">
-        <h2>${esc(ex.name)} — ${ex.bw ? '合計回数の推移' : '最大重量の推移'}</h2>
+        <h2>${all ? `【${ex.part}】` : ''}${esc(ex.name)} — ${ex.bw ? '合計回数の推移' : '最大重量の推移'}</h2>
         <canvas class="graph-canvas" data-ex="${ex.id}" width="640" height="400"></canvas>
         ${rows.join('')}
       </section>`;

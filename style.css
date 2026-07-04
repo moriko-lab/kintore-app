@@ -131,8 +131,11 @@ button { font-family: inherit; }
 .part-row {
   display: flex; justify-content: space-between; align-items: center;
   padding: 8px 2px; border-bottom: 1px solid var(--border);
+  cursor: pointer;
 }
 .part-row:last-child { border-bottom: none; }
+.part-row .part-days { margin-left: auto; }
+.part-arrow { color: var(--muted); margin-left: 10px; font-size: 16px; }
 .part-days.fresh { color: var(--ok); }
 .part-days.warn { color: var(--warn); }
 .part-days.stale { color: var(--danger); }
