@@ -165,7 +165,7 @@ async function renderCalendar() {
     if (mins < 60) label = 'さっき';
     else if (days === 0) label = `${hours}時間前`;
     else if (hours === 0) label = `${days}日前`;
-    else label = `${days}日と${hours}時間前`;
+    else label = `${days}日${hours}時間前`;
     const cls = days >= 7 ? 'stale' : days >= 4 ? 'warn' : 'fresh';
     return `<div class="part-row"><span class="part-name">${part}</span>
       <span class="part-days ${cls}">${label}</span></div>`;
