@@ -91,11 +91,15 @@ async function setSetting(key, value) {
 const $view = document.getElementById('view');
 const $title = document.getElementById('title');
 const $back = document.getElementById('back-btn');
+const $next = document.getElementById('next-btn');
 
-function setHeader(title, showBack) {
+// 日別記録画面ではヘッダ左右の矢印が前日/翌日ナビになる
+// （カレンダーへはタブバーで戻る）。display:none だとタイトルの
+// 中央位置がずれるため、幅を保ったまま非表示にする
+function setHeader(title, showDayNav) {
   $title.textContent = title;
-  // display:none だとタイトルの中央位置がずれるため、幅を保ったまま非表示にする
-  $back.classList.toggle('invisible', !showBack);
+  $back.classList.toggle('invisible', !showDayNav);
+  $next.classList.toggle('invisible', !showDayNav);
 }
 
 function render() {
@@ -111,7 +115,14 @@ function render() {
 document.querySelectorAll('#tabbar .tab').forEach(b => {
   b.addEventListener('click', () => { state.tab = b.dataset.tab; render(); });
 });
-$back.addEventListener('click', () => { state.tab = 'calendar'; render(); });
+
+function shiftDate(s, delta) {
+  const d = new Date(s + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  return dateStr(d);
+}
+$back.addEventListener('click', () => openDay(shiftDate(state.dayDate, -1)));
+$next.addEventListener('click', () => openDay(shiftDate(state.dayDate, 1)));
 
 // ---------- カレンダー ----------
 
@@ -202,6 +213,9 @@ async function renderCalendar() {
 
 function openDay(date) {
   state.dayDate = date;
+  // 前日/翌日ナビで月をまたいでもカレンダーに戻ったとき同じ月が出るよう同期する
+  state.calYear = Number(date.slice(0, 4));
+  state.calMonth = Number(date.slice(5, 7)) - 1;
   state.tab = 'day';
   render();
 }
@@ -472,7 +486,7 @@ function renderGraph() {
     }
     return `
       <section class="card">
-        <h2>${esc(ex.name)} — ${ex.bw ? '最大回数の推移' : '最大重量の推移'}</h2>
+        <h2>${esc(ex.name)} — ${ex.bw ? '合計回数の推移' : '最大重量の推移'}</h2>
         <canvas class="graph-canvas" data-ex="${ex.id}" width="640" height="400"></canvas>
         ${rows.join('')}
       </section>`;
@@ -494,8 +508,8 @@ function drawGraph(exId, cv) {
   for (const s of state.sessions) {
     const en = s.entries.find(e => e.exId === exId);
     if (en && en.sets.length) {
-      // 自重種目: 最大回数 / 通常種目: 最大重量
-      const max = bw ? Math.max(...en.sets.map(x => x.r)) : Math.max(...en.sets.map(x => x.w));
+      // 自重種目: 合計回数 / 通常種目: 最大重量
+      const max = bw ? en.sets.reduce((sum, x) => sum + x.r, 0) : Math.max(...en.sets.map(x => x.w));
       points.push({ date: s.date, max });
     }
   }
@@ -713,6 +727,45 @@ function openModal(html) {
   return $modalRoot.querySelector('.modal');
 }
 function closeModal() { $modalRoot.innerHTML = ''; }
+
+// ---------- プルリフレッシュ ----------
+// 画面最上部で下に引っ張ると再読み込みする。しきい値未満で離したら何もしない
+
+const $pull = document.getElementById('pull-indicator');
+const PULL_THRESHOLD = 110;
+let pullStartY = null;
+let pullDy = 0;
+
+document.addEventListener('touchstart', e => {
+  // スクロール最上部から開始したときのみ対象（モーダル表示中は無効）
+  pullStartY = (window.scrollY <= 0 && !document.querySelector('.modal')) ? e.touches[0].clientY : null;
+  pullDy = 0;
+}, { passive: true });
+
+document.addEventListener('touchmove', e => {
+  if (pullStartY === null) return;
+  pullDy = e.touches[0].clientY - pullStartY;
+  if (pullDy > 15 && window.scrollY <= 0) {
+    const shown = Math.min(pullDy / 2, 70);
+    $pull.classList.remove('hidden');
+    $pull.style.transform = `translateX(-50%) translateY(${shown}px)`;
+    $pull.textContent = pullDy >= PULL_THRESHOLD ? '離して更新' : '引っ張って更新';
+    $pull.classList.toggle('ready', pullDy >= PULL_THRESHOLD);
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', () => {
+  if (pullStartY !== null && pullDy >= PULL_THRESHOLD) {
+    $pull.textContent = '更新中...';
+    location.reload();
+    return;
+  }
+  $pull.classList.add('hidden');
+  $pull.classList.remove('ready');
+  $pull.style.transform = '';
+  pullStartY = null;
+  pullDy = 0;
+});
 
 // ---------- 起動 ----------
 
