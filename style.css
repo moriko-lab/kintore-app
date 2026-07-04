@@ -185,6 +185,13 @@ button { font-family: inherit; }
   background: var(--accent); color: var(--accent-fg); flex-shrink: 0;
 }
 .prev-info { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.diff-info { margin-left: 6px; }
+.diff-up { color: var(--ok); font-weight: 600; }
+.diff-down { color: var(--danger); }
+.diff-same { color: var(--muted); }
+.pb-text { color: var(--accent); font-weight: 700; margin-left: 8px; }
+.set-no.pb { color: var(--accent); font-weight: 700; }
+.pb-line { font-size: 12px; color: var(--muted); margin: -2px 0 8px; }
 
 .set-row {
   display: flex; align-items: center; gap: 6px;

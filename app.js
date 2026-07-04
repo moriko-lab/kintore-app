@@ -66,6 +66,41 @@ function prevEntry(exId, date) {
   return null;
 }
 
+// エントリの比較指標: 通常種目 = セット最大重量 / 自重種目 = 合計回数
+function entryMetric(en, bw) {
+  if (!en.sets.length) return null;
+  return bw ? en.sets.reduce((sum, x) => sum + x.r, 0) : Math.max(...en.sets.map(x => x.w));
+}
+
+// date より前の自己ベスト（セット単位。通常: 最大重量 / 自重: 最大回数）。履歴なしは null
+function bestBefore(exId, date, bw) {
+  let best = null;
+  for (const s of state.sessions) {
+    if (s.date >= date) continue;
+    const en = s.entries.find(e => e.exId === exId);
+    if (!en) continue;
+    for (const set of en.sets) {
+      const v = bw ? set.r : set.w;
+      if (best === null || v > best) best = v;
+    }
+  }
+  return best;
+}
+
+// 前回比の差分 + 自己ベスト更新の表示 HTML（日別記録の前回行に付く）
+function diffInfoHtml(en, date) {
+  const bw = exIsBw(en.exId);
+  const prev = prevEntry(en.exId, date);
+  const cur = entryMetric(en, bw);
+  if (!prev || cur === null) return '<span class="diff-info"></span>';
+  const d = Math.round((cur - entryMetric(prev.entry, bw)) * 10) / 10;
+  const cls = d > 0 ? 'diff-up' : d < 0 ? 'diff-down' : 'diff-same';
+  const unit = bw ? '回' : 'kg';
+  const best = bestBefore(en.exId, date, bw);
+  const anyPb = best !== null && en.sets.some(s => (bw ? s.r : s.w) > best && (bw ? s.r : s.w) > 0);
+  return `<span class="diff-info"><span class="${cls}">今日 ${d > 0 ? '+' : ''}${d}${unit}</span>${anyPb ? '<span class="pb-text">自己ベスト更新</span>' : ''}</span>`;
+}
+
 async function saveSession(session) {
   if (session.entries.length === 0) {
     await db.del('sessions', session.date);
@@ -291,9 +326,11 @@ function renderDay() {
   const entriesHtml = session.entries.map((en, ei) => {
     const prev = prevEntry(en.exId, date);
     const bw = exIsBw(en.exId);
+    const best = bestBefore(en.exId, date, bw);
+    const isPb = s => { const v = bw ? s.r : s.w; return best !== null && v > best && v > 0; };
     const setsHtml = en.sets.map((s, si) => `
       <div class="set-row${s.done ? ' done' : ''}${bw ? ' bw' : ''}" data-ei="${ei}" data-si="${si}">
-        <span class="set-no">${si + 1}</span>
+        <span class="set-no${isPb(s) ? ' pb' : ''}">${isPb(s) ? '&#9733;' : si + 1}</span>
         ${bw ? '<span class="unit bw-unit">自重+</span>' : ''}
         <input type="number" inputmode="decimal" step="0.5" min="0" class="w-input" value="${s.w}" aria-label="${bw ? '追加重量' : '重量'}">
         <span class="unit">kg</span>
@@ -309,7 +346,7 @@ function renderDay() {
           <span class="entry-name">${esc(exName(en.exId))}${bw ? '<span class="bw-tag">自重</span>' : ''}</span>
           <button class="del-entry-btn" aria-label="種目削除">&times;</button>
         </div>
-        ${prev ? `<div class="prev-info">前回 ${prev.date} : ${setsSummary(prev.entry.sets, bw)}</div>` : ''}
+        ${prev ? `<div class="prev-info">前回 ${fmtShortDate(prev.date)} : ${setsSummary(prev.entry.sets, bw)} ${diffInfoHtml(en, date)}</div>` : ''}
         ${setsHtml}
         <button class="add-set-btn" data-ei="${ei}">セット追加</button>
       </section>`;
@@ -321,6 +358,23 @@ function renderDay() {
   `;
 
   document.getElementById('add-ex-btn').onclick = () => openExercisePicker(session);
+
+  // 重量/回数の変更後、フォーカスを奪わずに差分・自己ベスト表示だけ更新する
+  function refreshEntryStatus(card, en) {
+    const bw = exIsBw(en.exId);
+    const best = bestBefore(en.exId, date, bw);
+    const diffEl = card.querySelector('.diff-info');
+    if (diffEl) diffEl.outerHTML = diffInfoHtml(en, date);
+    card.querySelectorAll('.set-row').forEach((row, si) => {
+      const s = en.sets[si];
+      if (!s) return;
+      const v = bw ? s.r : s.w;
+      const pb = best !== null && v > best && v > 0;
+      const no = row.querySelector('.set-no');
+      no.innerHTML = pb ? '&#9733;' : String(si + 1);
+      no.classList.toggle('pb', pb);
+    });
+  }
 
   $view.querySelectorAll('.entry').forEach(card => {
     const ei = Number(card.dataset.ei);
@@ -343,10 +397,14 @@ function renderDay() {
       const set = session.entries[ei].sets[si];
 
       row.querySelector('.w-input').addEventListener('change', async e => {
-        set.w = Number(e.target.value) || 0; await saveSession(session);
+        set.w = Number(e.target.value) || 0;
+        await saveSession(session);
+        refreshEntryStatus(card, session.entries[ei]);
       });
       row.querySelector('.r-input').addEventListener('change', async e => {
-        set.r = Number(e.target.value) || 0; await saveSession(session);
+        set.r = Number(e.target.value) || 0;
+        await saveSession(session);
+        refreshEntryStatus(card, session.entries[ei]);
       });
       row.querySelector('.done-btn').onclick = async () => {
         set.done = !set.done;
@@ -374,7 +432,7 @@ function openExercisePicker(session) {
       return `<div class="pick-row" data-id="${ex.id}">
         <div class="pick-main">
           <span class="pick-name">${esc(ex.name)}${ex.bw ? '<span class="bw-tag">自重</span>' : ''}</span>
-          ${prev ? `<span class="pick-prev">前回 ${prev.date} : ${setsSummary(prev.entry.sets, !!ex.bw)}</span>` : '<span class="pick-prev">記録なし</span>'}
+          ${prev ? `<span class="pick-prev">前回 ${fmtShortDate(prev.date)} : ${setsSummary(prev.entry.sets, !!ex.bw)}</span>` : '<span class="pick-prev">記録なし</span>'}
         </div>
         ${prev ? `<button class="copy-btn" data-id="${ex.id}">前回コピー</button>` : ''}
       </div>`;
@@ -542,16 +600,19 @@ function renderGraph() {
   const options = ['ALL', ...parts].map(p =>
     `<option value="${p}"${p === state.graphPart ? ' selected' : ''}>${p}</option>`).join('');
 
-  // 部位内の種目ごとにグラフ + 直近履歴のカードを並べる
+  // 部位内の種目ごとにグラフ + 自己ベスト + 直近履歴のカードを並べる
   const cards = exList.map(ex => {
     const rows = [];
     for (let i = state.sessions.length - 1; i >= 0 && rows.length < 5; i--) {
       const en = state.sessions[i].entries.find(e => e.exId === ex.id);
       if (en) rows.push(`<div class="hist-row"><span>${fmtShortDate(state.sessions[i].date)}</span><span>${setsSummary(en.sets, !!ex.bw)}</span></div>`);
     }
+    const pts = seriesFor(ex.id);
+    const best = pts.length ? Math.max(...pts.map(p => p.max)) : null;
     return `
       <section class="card">
         <h2>${all ? `【${ex.part}】` : ''}${esc(ex.name)} — ${ex.bw ? '合計回数の推移' : '最大重量の推移'}</h2>
+        ${best !== null ? `<p class="pb-line">自己ベスト: ${best}${ex.bw ? '回' : 'kg'}</p>` : ''}
         <canvas class="graph-canvas" data-ex="${ex.id}" width="640" height="400"></canvas>
         ${rows.join('')}
       </section>`;
@@ -567,18 +628,22 @@ function renderGraph() {
   $view.querySelectorAll('.graph-canvas').forEach(cv => drawGraph(Number(cv.dataset.ex), cv));
 }
 
-function drawGraph(exId, cv) {
+// グラフ系列: 自重種目 = セッション合計回数 / 通常種目 = セッション最大重量
+function seriesFor(exId) {
   const bw = exIsBw(exId);
   const points = [];
   for (const s of state.sessions) {
     const en = s.entries.find(e => e.exId === exId);
     if (en && en.sets.length) {
-      // 自重種目: 合計回数 / 通常種目: 最大重量
       const max = bw ? en.sets.reduce((sum, x) => sum + x.r, 0) : Math.max(...en.sets.map(x => x.w));
       points.push({ date: s.date, max });
     }
   }
-  const data = points.slice(-30);
+  return points;
+}
+
+function drawGraph(exId, cv) {
+  const data = seriesFor(exId).slice(-30);
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height, PAD = 48;
   const fg = getComputedStyle(document.body).getPropertyValue('--fg').trim() || '#ddd';
