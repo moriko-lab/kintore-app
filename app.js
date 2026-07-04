@@ -1,7 +1,7 @@
 // 筋トレ記録 PWA 本体
 // 画面: カレンダー / 日別記録 / グラフ / 設定
 
-const PARTS = ['胸', '背中', '肩', '腕', '脚', '腹', 'その他'];
+const PARTS = ['胸', '背中', '肩', '腕', '脚', '腹', '体力'];
 const WEEKDAYS = ['月', '火', '水', '木', '金', '土', '日'];
 
 const state = {
@@ -25,9 +25,6 @@ function todayStr() { return dateStr(new Date()); }
 function jpWeekday(s) {
   const d = new Date(s + 'T00:00:00');
   return WEEKDAYS[(d.getDay() + 6) % 7];
-}
-function daysBetween(a, b) {
-  return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -73,6 +70,9 @@ async function saveSession(session) {
   if (session.entries.length === 0) {
     await db.del('sessions', session.date);
   } else {
+    // 当日の記録はリアルタイム入力とみなし、実施時刻として保存時刻を残す
+    // （過去日の遡及編集では実施時刻を上書きしない）
+    if (session.date === todayStr()) session.updatedAt = Date.now();
     await db.put('sessions', session);
   }
   await reloadData();
@@ -94,7 +94,8 @@ const $back = document.getElementById('back-btn');
 
 function setHeader(title, showBack) {
   $title.textContent = title;
-  $back.classList.toggle('hidden', !showBack);
+  // display:none だとタイトルの中央位置がずれるため、幅を保ったまま非表示にする
+  $back.classList.toggle('invisible', !showBack);
 }
 
 function render() {
@@ -146,17 +147,28 @@ async function renderCalendar() {
     </div>`;
   }
 
-  // 部位別経過日数
+  // 部位別の経過時間（最終トレーニングから何日と何時間前か）
   const partRows = PARTS.map(part => {
-    let last = null;
-    for (let i = state.sessions.length - 1; i >= 0 && !last; i--) {
-      if (state.sessions[i].entries.some(e => exPart(e.exId) === part)) last = state.sessions[i].date;
+    let lastTs = null;
+    for (let i = state.sessions.length - 1; i >= 0 && !lastTs; i--) {
+      const s = state.sessions[i];
+      if (s.entries.some(e => exPart(e.exId) === part)) {
+        // 実施時刻の記録がない古いデータはその日の 0:00 とみなす
+        lastTs = s.updatedAt || new Date(s.date + 'T00:00:00').getTime();
+      }
     }
-    if (!last) return '';
-    const days = daysBetween(last, today);
+    if (!lastTs) return '';
+    const mins = Math.max(0, Math.floor((Date.now() - lastTs) / 60000));
+    const days = Math.floor(mins / 1440);
+    const hours = Math.floor((mins % 1440) / 60);
+    let label;
+    if (mins < 60) label = 'さっき';
+    else if (days === 0) label = `${hours}時間前`;
+    else if (hours === 0) label = `${days}日前`;
+    else label = `${days}日と${hours}時間前`;
     const cls = days >= 7 ? 'stale' : days >= 4 ? 'warn' : 'fresh';
     return `<div class="part-row"><span class="part-name">${part}</span>
-      <span class="part-days ${cls}">${days === 0 ? '今日' : days + '日前'}</span></div>`;
+      <span class="part-days ${cls}">${label}</span></div>`;
   }).join('');
 
   $view.innerHTML = `
@@ -392,23 +404,25 @@ function unlockAudio() {
 function playAlarm() {
   try {
     if (!audioCtx) return;
-    // ドミソド（C5-E5-G5-C6）の上昇アルペジオ。正弦波 + ゆるやかな減衰で
-    // ベル風のやわらかい音にする。全体で約1.5秒、自動停止
+    // ドミソド（C5-E5-G5-C6）の上昇アルペジオを2回鳴らす。正弦波 +
+    // ゆるやかな減衰でベル風のやわらかい音。全体で約2.5秒、自動停止
     const t0 = audioCtx.currentTime;
     const notes = [523.25, 659.25, 783.99, 1046.5];
-    notes.forEach((freq, i) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      const start = t0 + i * 0.16;
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.22, start + 0.04);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
-      osc.start(start);
-      osc.stop(start + 0.95);
+    [0, 1.2].forEach(offset => {
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        const start = t0 + offset + i * 0.16;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.22, start + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
+        osc.start(start);
+        osc.stop(start + 0.95);
+      });
     });
   } catch (e) { /* 音が出せない環境では無視 */ }
 }
@@ -705,6 +719,12 @@ function closeModal() { $modalRoot.innerHTML = ''; }
 (async function init() {
   await db.open();
   await reloadData();
+  // 部位名変更の移行: 旧「その他」→「体力」（2026-07-04）
+  const legacy = state.exercises.filter(e => e.part === 'その他');
+  if (legacy.length > 0) {
+    for (const ex of legacy) { ex.part = '体力'; await db.put('exercises', ex); }
+    await reloadData();
+  }
   const now = new Date();
   state.calYear = now.getFullYear();
   state.calMonth = now.getMonth();
