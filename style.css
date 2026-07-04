@@ -73,6 +73,27 @@ button { font-family: inherit; }
 .empty-msg { text-align: center; color: var(--muted); padding: 24px 0; }
 .note { font-size: 13px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
 
+/* バックアップ喚起バナー */
+.backup-banner {
+  display: block; width: 100%;
+  padding: 12px; margin-bottom: 12px;
+  font-size: 13px; text-align: left;
+  background: color-mix(in srgb, var(--warn) 15%, var(--card));
+  color: var(--warn);
+  border: 1px solid var(--warn); border-radius: 10px; cursor: pointer;
+}
+
+/* 自重種目タグ */
+.bw-tag {
+  font-size: 10px; margin-left: 6px; padding: 2px 6px;
+  border: 1px solid var(--accent); border-radius: 20px;
+  color: var(--accent); vertical-align: middle;
+}
+.bw-check {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 10px; font-size: 13px; color: var(--muted);
+}
+
 /* カレンダー */
 .cal-nav {
   display: flex; align-items: center; justify-content: space-between;
@@ -123,9 +144,11 @@ button { font-family: inherit; }
   background: var(--bg); color: var(--fg);
   border: 1px solid var(--border); border-radius: 8px;
 }
-.unit { font-size: 12px; color: var(--muted); }
+.unit { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.bw-unit { font-size: 11px; }
+.set-row.bw input { width: 54px; }
 .done-btn {
-  margin-left: auto; padding: 9px 14px; font-size: 14px;
+  margin-left: auto; padding: 9px 12px; font-size: 14px; white-space: nowrap;
   background: var(--ok); color: #fff; border: none; border-radius: 8px; cursor: pointer;
 }
 .set-row.done .done-btn { background: var(--muted); }

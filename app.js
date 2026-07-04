@@ -14,6 +14,7 @@ const state = {
   sessions: [],           // date 昇順
   timerId: null,
   timerRemain: 0,
+  timerEndAt: 0,
 };
 
 // ---------- ユーティリティ ----------
@@ -39,7 +40,12 @@ function exPart(id) {
   const ex = state.exercises.find(e => e.id === id);
   return ex ? ex.part : 'その他';
 }
-function setsSummary(sets) {
+function exIsBw(id) {
+  const ex = state.exercises.find(e => e.id === id);
+  return !!(ex && ex.bw);
+}
+function setsSummary(sets, bw) {
+  if (bw) return sets.map(s => s.w > 0 ? `自重+${s.w}kg×${s.r}` : `自重×${s.r}`).join(', ');
   return sets.map(s => `${s.w}kg×${s.r}`).join(', ');
 }
 
@@ -108,8 +114,21 @@ $back.addEventListener('click', () => { state.tab = 'calendar'; render(); });
 
 // ---------- カレンダー ----------
 
-function renderCalendar() {
+async function renderCalendar() {
   setHeader('筋トレ記録', false);
+
+  // バックアップ喚起: データはブラウザ内にしかないため、書き出しが古いと警告する
+  let banner = '';
+  if (state.sessions.length > 0) {
+    const lastExport = await getSetting('lastExportAt', null);
+    if (!lastExport) {
+      banner = 'バックアップ未実施です。設定画面から書き出してください';
+    } else {
+      const days = Math.floor((Date.now() - lastExport) / 86400000);
+      if (days >= 14) banner = `最終バックアップから${days}日経過。書き出しをおすすめします`;
+    }
+  }
+
   const y = state.calYear, m = state.calMonth;
   const first = new Date(y, m, 1);
   const startOffset = (first.getDay() + 6) % 7; // 月曜始まり
@@ -141,6 +160,7 @@ function renderCalendar() {
   }).join('');
 
   $view.innerHTML = `
+    ${banner ? `<button class="backup-banner" id="backup-banner">${banner}</button>` : ''}
     <div class="cal-nav">
       <button class="icon-btn" id="cal-prev">&#8249;</button>
       <span class="cal-title">${y}年${m + 1}月</span>
@@ -161,6 +181,8 @@ function renderCalendar() {
     state.calMonth++; if (state.calMonth > 11) { state.calMonth = 0; state.calYear++; } render();
   };
   document.getElementById('today-btn').onclick = () => openDay(today);
+  const $banner = document.getElementById('backup-banner');
+  if ($banner) $banner.onclick = () => { state.tab = 'settings'; render(); };
   $view.querySelectorAll('.cal-cell[data-date]').forEach(c => {
     c.addEventListener('click', () => openDay(c.dataset.date));
   });
@@ -181,10 +203,12 @@ function renderDay() {
 
   const entriesHtml = session.entries.map((en, ei) => {
     const prev = prevEntry(en.exId, date);
+    const bw = exIsBw(en.exId);
     const setsHtml = en.sets.map((s, si) => `
-      <div class="set-row${s.done ? ' done' : ''}" data-ei="${ei}" data-si="${si}">
+      <div class="set-row${s.done ? ' done' : ''}${bw ? ' bw' : ''}" data-ei="${ei}" data-si="${si}">
         <span class="set-no">${si + 1}</span>
-        <input type="number" inputmode="decimal" step="0.5" min="0" class="w-input" value="${s.w}" aria-label="重量">
+        ${bw ? '<span class="unit bw-unit">自重+</span>' : ''}
+        <input type="number" inputmode="decimal" step="0.5" min="0" class="w-input" value="${s.w}" aria-label="${bw ? '追加重量' : '重量'}">
         <span class="unit">kg</span>
         <input type="number" inputmode="numeric" step="1" min="0" class="r-input" value="${s.r}" aria-label="回数">
         <span class="unit">回</span>
@@ -195,10 +219,10 @@ function renderDay() {
       <section class="card entry" data-ei="${ei}">
         <div class="entry-head">
           <span class="part-chip">${exPart(en.exId)}</span>
-          <span class="entry-name">${esc(exName(en.exId))}</span>
+          <span class="entry-name">${esc(exName(en.exId))}${bw ? '<span class="bw-tag">自重</span>' : ''}</span>
           <button class="del-entry-btn" aria-label="種目削除">&times;</button>
         </div>
-        ${prev ? `<div class="prev-info">前回 ${prev.date} : ${setsSummary(prev.entry.sets)}</div>` : ''}
+        ${prev ? `<div class="prev-info">前回 ${prev.date} : ${setsSummary(prev.entry.sets, bw)}</div>` : ''}
         ${setsHtml}
         <button class="add-set-btn" data-ei="${ei}">セット追加</button>
       </section>`;
@@ -262,8 +286,8 @@ function openExercisePicker(session) {
       const prev = prevEntry(ex.id, session.date);
       return `<div class="pick-row" data-id="${ex.id}">
         <div class="pick-main">
-          <span class="pick-name">${esc(ex.name)}</span>
-          ${prev ? `<span class="pick-prev">前回 ${prev.date} : ${setsSummary(prev.entry.sets)}</span>` : '<span class="pick-prev">記録なし</span>'}
+          <span class="pick-name">${esc(ex.name)}${ex.bw ? '<span class="bw-tag">自重</span>' : ''}</span>
+          ${prev ? `<span class="pick-prev">前回 ${prev.date} : ${setsSummary(prev.entry.sets, !!ex.bw)}</span>` : '<span class="pick-prev">記録なし</span>'}
         </div>
         ${prev ? `<button class="copy-btn" data-id="${ex.id}">前回コピー</button>` : ''}
       </div>`;
@@ -279,6 +303,7 @@ function openExercisePicker(session) {
       <input type="text" id="new-ex-name" placeholder="新しい種目名">
       <button id="new-ex-add">登録</button>
     </div>
+    <label class="bw-check"><input type="checkbox" id="new-ex-bw"> 自重種目（懸垂・腕立て等。重量欄は追加重量になる）</label>
   `);
 
   async function addEntry(exId, copyPrev) {
@@ -288,7 +313,7 @@ function openExercisePicker(session) {
     if (copyPrev && prev) {
       sets = prev.entry.sets.map(s => ({ w: s.w, r: s.r, done: false }));
     } else {
-      const base = prev ? prev.entry.sets[0] : { w: 0, r: 10 };
+      const base = prev ? prev.entry.sets[0] : { w: 0, r: 10 }; // 自重種目は追加重量0が既定
       sets = [{ w: base.w, r: base.r, done: false }];
     }
     session.entries.push({ exId, sets });
@@ -304,9 +329,10 @@ function openExercisePicker(session) {
   modal.querySelector('#new-ex-add').onclick = async () => {
     const name = modal.querySelector('#new-ex-name').value.trim();
     const part = modal.querySelector('#new-ex-part').value;
+    const bw = modal.querySelector('#new-ex-bw').checked;
     if (!name) return;
     if (state.exercises.some(e => e.name === name)) { alert('同名の種目があります'); return; }
-    const id = await db.add('exercises', { name, part });
+    const id = await db.add('exercises', { name, part, bw });
     await reloadData();
     await addEntry(id, false);
   };
@@ -317,20 +343,55 @@ function openExercisePicker(session) {
 const $timerBar = document.getElementById('timer-bar');
 const $timerRemain = document.getElementById('timer-remain');
 
+// 終了時刻ベースで残りを計算する（バックグラウンドで setInterval が
+// 止まっても、復帰時に正しい残り時間へ追いつける）
 async function startTimer() {
   const sec = await getSetting('timerSec', 90);
-  state.timerRemain = sec;
+  state.timerEndAt = Date.now() + sec * 1000;
   $timerBar.classList.remove('hidden');
-  updateTimerLabel();
+  requestNotifyPermission(); // ユーザー操作起点のここでしか許可を求められない
+  requestWakeLock();
   clearInterval(state.timerId);
-  state.timerId = setInterval(() => {
-    state.timerRemain--;
-    updateTimerLabel();
-    if (state.timerRemain <= 0) {
-      stopTimer();
-      beep();
-    }
-  }, 1000);
+  state.timerId = setInterval(tickTimer, 500);
+  tickTimer();
+}
+
+function tickTimer() {
+  state.timerRemain = Math.max(0, Math.ceil((state.timerEndAt - Date.now()) / 1000));
+  updateTimerLabel();
+  if (state.timerRemain <= 0) {
+    stopTimer();
+    beep();
+    notifyTimerDone();
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.timerId) tickTimer();
+});
+
+// タイマー作動中は画面をスリープさせない（ロックすると JS が止まり
+// 終了に気づけないため）。非対応環境では黙って何もしない
+let wakeLock = null;
+async function requestWakeLock() {
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* 非対応 */ }
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+
+function requestNotifyPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+}
+
+async function notifyTimerDone() {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) reg.showNotification('休憩終了', { body: '次のセットへ', tag: 'rest-timer' });
+  } catch (e) { /* 通知不可の環境では無視 */ }
 }
 
 function updateTimerLabel() {
@@ -342,10 +403,11 @@ function stopTimer() {
   clearInterval(state.timerId);
   state.timerId = null;
   $timerBar.classList.add('hidden');
+  releaseWakeLock();
 }
 
 document.getElementById('timer-stop').onclick = stopTimer;
-document.getElementById('timer-plus').onclick = () => { state.timerRemain += 30; updateTimerLabel(); };
+document.getElementById('timer-plus').onclick = () => { state.timerEndAt += 30000; tickTimer(); };
 
 function beep() {
   try {
@@ -374,10 +436,12 @@ function renderGraph() {
   }
   if (!usedIds.includes(state.graphExId)) state.graphExId = usedIds[0];
 
+  // 自重種目は重量ではなく回数の伸びが進捗指標になるため、グラフの軸を切り替える
+  const bw = exIsBw(state.graphExId);
   $view.innerHTML = `
     <select id="graph-ex" class="graph-select">${options}</select>
     <section class="card">
-      <h2>最大重量の推移</h2>
+      <h2>${bw ? '最大回数の推移' : '最大重量の推移'}</h2>
       <canvas id="graph-canvas" width="640" height="400"></canvas>
     </section>
     <section class="card" id="graph-history"></section>
@@ -391,16 +455,21 @@ function renderGraph() {
   const rows = [];
   for (let i = state.sessions.length - 1; i >= 0 && rows.length < 10; i--) {
     const en = state.sessions[i].entries.find(e => e.exId === state.graphExId);
-    if (en) rows.push(`<div class="hist-row"><span>${state.sessions[i].date}</span><span>${setsSummary(en.sets)}</span></div>`);
+    if (en) rows.push(`<div class="hist-row"><span>${state.sessions[i].date}</span><span>${setsSummary(en.sets, bw)}</span></div>`);
   }
   document.getElementById('graph-history').innerHTML = `<h2>直近の記録</h2>${rows.join('')}`;
 }
 
 function drawGraph(exId) {
+  const bw = exIsBw(exId);
   const points = [];
   for (const s of state.sessions) {
     const en = s.entries.find(e => e.exId === exId);
-    if (en && en.sets.length) points.push({ date: s.date, max: Math.max(...en.sets.map(x => x.w)) });
+    if (en && en.sets.length) {
+      // 自重種目: 最大回数 / 通常種目: 最大重量
+      const max = bw ? Math.max(...en.sets.map(x => x.r)) : Math.max(...en.sets.map(x => x.w));
+      points.push({ date: s.date, max });
+    }
   }
   const data = points.slice(-30);
   const cv = document.getElementById('graph-canvas');
@@ -457,6 +526,7 @@ function drawGraph(exId) {
 async function renderSettings() {
   setHeader('設定', false);
   const timerSec = await getSetting('timerSec', 90);
+  const bodyWeight = await getSetting('bodyWeight', '');
 
   const exRows = state.exercises.map(ex => `
     <div class="ex-manage-row" data-id="${ex.id}">
@@ -471,6 +541,14 @@ async function renderSettings() {
       <div class="setting-row">
         <label for="timer-sec">休憩時間（秒）</label>
         <input type="number" id="timer-sec" inputmode="numeric" min="10" max="600" step="10" value="${timerSec}">
+      </div>
+    </section>
+    <section class="card">
+      <h2>体重</h2>
+      <p class="note">自重種目の実効負荷の参考値。記録の必須項目ではありません。</p>
+      <div class="setting-row">
+        <label for="body-weight">体重（kg）</label>
+        <input type="number" id="body-weight" inputmode="decimal" min="0" max="300" step="0.1" value="${bodyWeight}" placeholder="未設定">
       </div>
     </section>
     <section class="card">
@@ -501,6 +579,11 @@ async function renderSettings() {
     await setSetting('timerSec', v);
   });
 
+  document.getElementById('body-weight').addEventListener('change', async e => {
+    const v = Number(e.target.value);
+    await setSetting('bodyWeight', v > 0 ? v : '');
+  });
+
   document.getElementById('export-json').onclick = exportJson;
   document.getElementById('export-md').onclick = exportMarkdown;
   document.getElementById('import-file').addEventListener('change', importJson);
@@ -517,15 +600,16 @@ async function renderSettings() {
 
 // ---------- エクスポート / インポート ----------
 
+// 書き出しに成功したら true（キャンセル時は false）
 async function shareOrDownload(filename, text, mime) {
   const blob = new Blob([text], { type: mime });
   const file = new File([blob], filename, { type: mime });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
-      return;
+      return true;
     } catch (e) {
-      if (e.name === 'AbortError') return; // ユーザーキャンセル
+      if (e.name === 'AbortError') return false; // ユーザーキャンセル
     }
   }
   const a = document.createElement('a');
@@ -533,30 +617,38 @@ async function shareOrDownload(filename, text, mime) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
+  return true;
 }
 
-function exportJson() {
+async function markExported() {
+  await setSetting('lastExportAt', Date.now());
+}
+
+async function exportJson() {
   const payload = {
     app: 'kintore-app',
     version: 1,
     exportedAt: new Date().toISOString(),
+    bodyWeight: await getSetting('bodyWeight', ''),
     exercises: state.exercises,
     sessions: state.sessions,
   };
-  shareOrDownload(`kintore_${todayStr()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  const ok = await shareOrDownload(`kintore_${todayStr()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  if (ok) { await markExported(); render(); }
 }
 
-function exportMarkdown() {
+async function exportMarkdown() {
   const lines = [`# 筋トレ記録エクスポート（${todayStr()} 時点）`, ''];
   for (let i = state.sessions.length - 1; i >= 0; i--) {
     const s = state.sessions[i];
     lines.push(`## ${s.date} (${jpWeekday(s.date)})`, '');
     for (const en of s.entries) {
-      lines.push(`- ${exName(en.exId)} [${exPart(en.exId)}]: ${setsSummary(en.sets)}`);
+      lines.push(`- ${exName(en.exId)} [${exPart(en.exId)}]: ${setsSummary(en.sets, exIsBw(en.exId))}`);
     }
     lines.push('');
   }
-  shareOrDownload(`kintore_${todayStr()}.md`, lines.join('\n'), 'text/markdown');
+  const ok = await shareOrDownload(`kintore_${todayStr()}.md`, lines.join('\n'), 'text/markdown');
+  if (ok) { await markExported(); render(); }
 }
 
 async function importJson(e) {
@@ -575,6 +667,7 @@ async function importJson(e) {
   await db.clear('sessions');
   for (const ex of payload.exercises) await db.put('exercises', ex);
   for (const s of payload.sessions) await db.put('sessions', s);
+  if (payload.bodyWeight) await setSetting('bodyWeight', payload.bodyWeight);
   await reloadData();
   alert('取り込みました');
   render();
