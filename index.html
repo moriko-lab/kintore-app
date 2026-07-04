@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="筋トレ記録">
+<meta name="theme-color" content="#101418">
+<title>筋トレ記録</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="header">
+  <button id="back-btn" class="icon-btn hidden" aria-label="戻る">&#8249;</button>
+  <h1 id="title">筋トレ記録</h1>
+  <span id="header-spacer"></span>
+</header>
+
+<main id="view"></main>
+
+<div id="timer-bar" class="hidden">
+  <span id="timer-label">休憩</span>
+  <span id="timer-remain">0:00</span>
+  <button id="timer-plus" class="timer-btn">+30秒</button>
+  <button id="timer-stop" class="timer-btn">停止</button>
+</div>
+
+<nav id="tabbar">
+  <button data-tab="calendar" class="tab active">カレンダー</button>
+  <button data-tab="graph" class="tab">グラフ</button>
+  <button data-tab="settings" class="tab">設定</button>
+</nav>
+
+<div id="modal-root"></div>
+
+<script src="db.js"></script>
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
