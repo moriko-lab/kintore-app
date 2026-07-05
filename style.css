@@ -249,6 +249,7 @@ button:active { opacity: 0.55; }
 .pick-main { flex: 1; display: flex; flex-direction: column; gap: 3px; }
 .pick-name { font-size: 16px; font-weight: 500; }
 .pick-prev { font-size: 11px; color: var(--muted); }
+.pick-elapsed { color: var(--accent); font-weight: 600; }
 .copy-btn {
   padding: 9px 13px; font-size: 13px; font-weight: 600; flex-shrink: 0;
   background: var(--accent-tint); color: var(--accent);
@@ -311,6 +312,10 @@ button:active { opacity: 0.55; }
   border: none; border-radius: 12px;
   -webkit-appearance: none; appearance: none;
 }
+/* 種目カードのタイトル: 種目名を主役にして画面の区切りを分かりやすくする */
+.graph-title { display: flex; align-items: baseline; gap: 2px; margin-bottom: 8px; }
+.graph-ex { font-size: 17px; font-weight: 700; color: var(--fg); letter-spacing: -0.2px; }
+.graph-metric { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }
 .graph-canvas { width: 100%; height: auto; margin-bottom: 6px; }
 .hist-row {
   display: flex; justify-content: space-between; gap: 10px;

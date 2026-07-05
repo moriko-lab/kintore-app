@@ -61,9 +61,37 @@ function prevEntry(exId, date) {
     const s = state.sessions[i];
     if (s.date >= date) continue;
     const e = s.entries.find(en => en.exId === exId);
-    if (e) return { date: s.date, entry: e };
+    if (e) {
+      return {
+        date: s.date,
+        ts: s.updatedAt || new Date(s.date + 'T00:00:00').getTime(),
+        entry: e,
+      };
+    }
   }
   return null;
+}
+
+// 部位の最終実施時刻（実施時刻の記録がない古いデータはその日の 0:00 とみなす）。未実施は null
+function partLastTs(part) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const s = state.sessions[i];
+    if (s.entries.some(e => exPart(e.exId) === part)) {
+      return s.updatedAt || new Date(s.date + 'T00:00:00').getTime();
+    }
+  }
+  return null;
+}
+
+// 経過時間の表示ラベル（さっき / N時間前 / N日前 / N日M時間前）
+function elapsedLabel(ts) {
+  const mins = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
+  if (mins < 60) return 'さっき';
+  if (days === 0) return `${hours}時間前`;
+  if (hours === 0) return `${days}日前`;
+  return `${days}日${hours}時間前`;
 }
 
 // エントリの比較指標: 通常種目 = セット最大重量 / 自重種目 = 合計回数
@@ -211,30 +239,14 @@ async function renderCalendar() {
 
   // 部位別の経過時間（最終トレーニングから何日と何時間前か）。
   // 時間が経っている部位ほど上に並べる（次に鍛えるべき部位が先頭に来る）
-  const partRows = PARTS.map(part => {
-    let lastTs = null;
-    for (let i = state.sessions.length - 1; i >= 0 && !lastTs; i--) {
-      const s = state.sessions[i];
-      if (s.entries.some(e => exPart(e.exId) === part)) {
-        // 実施時刻の記録がない古いデータはその日の 0:00 とみなす
-        lastTs = s.updatedAt || new Date(s.date + 'T00:00:00').getTime();
-      }
-    }
-    return lastTs ? { part, lastTs } : null;
-  }).filter(Boolean)
+  const partRows = PARTS.map(part => ({ part, lastTs: partLastTs(part) }))
+    .filter(x => x.lastTs !== null)
     .sort((a, b) => a.lastTs - b.lastTs)
     .map(({ part, lastTs }) => {
-      const mins = Math.max(0, Math.floor((Date.now() - lastTs) / 60000));
-      const days = Math.floor(mins / 1440);
-      const hours = Math.floor((mins % 1440) / 60);
-      let label;
-      if (mins < 60) label = 'さっき';
-      else if (days === 0) label = `${hours}時間前`;
-      else if (hours === 0) label = `${days}日前`;
-      else label = `${days}日${hours}時間前`;
+      const days = Math.floor((Date.now() - lastTs) / 86400000);
       const cls = days >= 7 ? 'stale' : days >= 4 ? 'warn' : 'fresh';
       return `<div class="part-row" data-part="${part}"><span class="part-name">${part}</span>
-        <span class="part-days ${cls}">${label}</span><span class="part-arrow">&#8250;</span></div>`;
+        <span class="part-days ${cls}">${elapsedLabel(lastTs)}</span><span class="part-arrow">&#8250;</span></div>`;
     }).join('');
 
   $view.innerHTML = `
@@ -428,7 +440,12 @@ function renderDay() {
 // ---------- 種目ピッカー ----------
 
 function openExercisePicker(session) {
-  const groups = PARTS.map(part => {
+  // 部位は経過時間が長い順（未実施が最上位）。次に鍛えるべき部位が先頭に来る
+  const orderedParts = [...PARTS].sort((a, b) => {
+    const ta = partLastTs(a), tb = partLastTs(b);
+    return (ta === null ? -1 : ta) - (tb === null ? -1 : tb);
+  });
+  const groups = orderedParts.map(part => {
     const list = state.exercises.filter(e => e.part === part);
     if (list.length === 0) return '';
     const rows = list.map(ex => {
@@ -436,7 +453,7 @@ function openExercisePicker(session) {
       return `<div class="pick-row" data-id="${ex.id}">
         <div class="pick-main">
           <span class="pick-name">${esc(ex.name)}${ex.bw ? '<span class="bw-tag">自重</span>' : ''}</span>
-          ${prev ? `<span class="pick-prev">前回 ${fmtShortDate(prev.date)} : ${setsSummary(prev.entry.sets, !!ex.bw)}</span>` : '<span class="pick-prev">記録なし</span>'}
+          ${prev ? `<span class="pick-prev"><span class="pick-elapsed">${elapsedLabel(prev.ts)}</span> : ${setsSummary(prev.entry.sets, !!ex.bw)}</span>` : '<span class="pick-prev">記録なし</span>'}
         </div>
         ${prev ? `<button class="copy-btn" data-id="${ex.id}">前回コピー</button>` : ''}
       </div>`;
@@ -541,26 +558,38 @@ function unlockAudio() {
 function playAlarm() {
   try {
     if (!audioCtx) return;
-    // ドミソド（C5-E5-G5-C6）の上昇アルペジオを2回鳴らす。正弦波 +
-    // ゆるやかな減衰でベル風のやわらかい音。全体で約2.5秒、自動停止
-    const t0 = audioCtx.currentTime;
-    const notes = [523.25, 659.25, 783.99, 1046.5];
-    [0, 1.2].forEach(offset => {
-      notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        const start = t0 + offset + i * 0.16;
-        gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(0.22, start + 0.04);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
-        osc.start(start);
-        osc.stop(start + 0.95);
+    // 「ピンポン」型チャイム × 3回。
+    // 純正弦波は倍音がなく体感音量が小さいため、基音（三角波）+ 2倍・3倍音を
+    // 重ねて耳の感度が高い 1〜4kHz 帯にエネルギーを置き、コンプレッサーで
+    // クリップさせずに音圧を上げる。全体で約2.8秒、自動停止
+    const t0 = audioCtx.currentTime + 0.05;
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -18;
+    comp.knee.value = 12;
+    comp.ratio.value = 12;
+    comp.connect(audioCtx.destination);
+
+    const ring = offset => {
+      // ピン(E6) → ポン(C6) の2音
+      [[1318.5, 0, 0.5], [1046.5, 0.22, 0.65]].forEach(([freq, dt, dur]) => {
+        // 基音 + 倍音2つで厚みのある音色にする
+        [[1, 0.9, 'triangle'], [2, 0.35, 'sine'], [3, 0.12, 'sine']].forEach(([mult, g, type]) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(comp);
+          osc.type = type;
+          osc.frequency.value = freq * mult;
+          const start = t0 + offset + dt;
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(g, start + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+          osc.start(start);
+          osc.stop(start + dur + 0.05);
+        });
       });
-    });
+    };
+    [0, 1.0, 2.0].forEach(ring);
   } catch (e) { /* 音が出せない環境では無視 */ }
 }
 
@@ -580,9 +609,9 @@ document.getElementById('timer-stop').onclick = stopTimer;
 
 // ---------- グラフ ----------
 
-// 日付の短縮表記: MM-DD（曜）
+// 日付の短縮表記: MM-DD(曜)
 function fmtShortDate(s) {
-  return `${s.slice(5, 7)}-${s.slice(8, 10)}（${jpWeekday(s)}）`;
+  return `${s.slice(5, 7)}-${s.slice(8, 10)}(${jpWeekday(s)})`;
 }
 
 function renderGraph() {
@@ -615,7 +644,7 @@ function renderGraph() {
     const best = pts.length ? Math.max(...pts.map(p => p.max)) : null;
     return `
       <section class="card">
-        <h2>${all ? `【${ex.part}】` : ''}${esc(ex.name)} — ${ex.bw ? '合計回数の推移' : '最大重量の推移'}</h2>
+        <h2 class="graph-title"><span class="graph-ex">${all ? `【${ex.part}】` : ''}${esc(ex.name)}</span><span class="graph-metric"> — ${ex.bw ? '合計回数の推移' : '最大重量の推移'}</span></h2>
         ${best !== null ? `<p class="pb-line">自己ベスト: ${best}${ex.bw ? '回' : 'kg'}</p>` : ''}
         <canvas class="graph-canvas" data-ex="${ex.id}" width="640" height="400"></canvas>
         ${rows.join('')}
