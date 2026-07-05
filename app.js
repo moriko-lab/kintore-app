@@ -558,10 +558,9 @@ function unlockAudio() {
 function playAlarm() {
   try {
     if (!audioCtx) return;
-    // 「ピンポン」型チャイム × 3回。
-    // 純正弦波は倍音がなく体感音量が小さいため、基音（三角波）+ 2倍・3倍音を
-    // 重ねて耳の感度が高い 1〜4kHz 帯にエネルギーを置き、コンプレッサーで
-    // クリップさせずに音圧を上げる。全体で約2.8秒、自動停止
+    // ゲームクリア風の駆け上がり5音 × 2回（ユーザー試聴で10候補から選定）。
+    // 矩形波は倍音が豊富で体感音量が大きく、1〜4kHz 帯に音が乗る。
+    // コンプレッサーでクリップさせずに音圧を確保。全体で約2.2秒、自動停止
     const t0 = audioCtx.currentTime + 0.05;
     const comp = audioCtx.createDynamicsCompressor();
     comp.threshold.value = -18;
@@ -569,27 +568,26 @@ function playAlarm() {
     comp.ratio.value = 12;
     comp.connect(audioCtx.destination);
 
-    const ring = offset => {
-      // ピン(E6) → ポン(C6) の2音
-      [[1318.5, 0, 0.5], [1046.5, 0.22, 0.65]].forEach(([freq, dt, dur]) => {
-        // 基音 + 倍音2つで厚みのある音色にする
-        [[1, 0.9, 'triangle'], [2, 0.35, 'sine'], [3, 0.12, 'sine']].forEach(([mult, g, type]) => {
+    const run = offset => {
+      // C6 D6 E6 G6 C7 の駆け上がり。矩形波の基音 + 正弦波のオクターブ上
+      [1046.5, 1174.7, 1318.5, 1568, 2093].forEach((freq, i) => {
+        [[1, 0.4, 'square'], [2, 0.15, 'sine']].forEach(([mult, g, type]) => {
           const osc = audioCtx.createOscillator();
           const gain = audioCtx.createGain();
           osc.connect(gain);
           gain.connect(comp);
           osc.type = type;
           osc.frequency.value = freq * mult;
-          const start = t0 + offset + dt;
+          const start = t0 + offset + i * 0.09;
           gain.gain.setValueAtTime(0.0001, start);
-          gain.gain.exponentialRampToValueAtTime(g, start + 0.015);
-          gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+          gain.gain.exponentialRampToValueAtTime(g, start + 0.008);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
           osc.start(start);
-          osc.stop(start + dur + 0.05);
+          osc.stop(start + 0.25);
         });
       });
     };
-    [0, 1.0, 2.0].forEach(ring);
+    [0, 1.1].forEach(run);
   } catch (e) { /* 音が出せない環境では無視 */ }
 }
 
