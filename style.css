@@ -241,7 +241,17 @@ button:active { opacity: 0.55; }
 }
 
 /* 種目ピッカー */
+.pick-part-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 16px 0 4px;
+}
 .pick-part { font-size: 13px; font-weight: 600; color: var(--muted); margin: 16px 0 4px; }
+.pick-part-row .pick-part { margin: 0; }
+.part-copy-btn {
+  padding: 6px 12px; font-size: 12px; font-weight: 600;
+  background: var(--accent-tint); color: var(--accent);
+  border: none; border-radius: 20px; cursor: pointer;
+}
 .pick-row {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 4px; border-bottom: 0.5px solid var(--separator); cursor: pointer;
@@ -267,6 +277,38 @@ button:active { opacity: 0.55; }
   background: var(--accent); color: var(--accent-fg);
   border: none; border-radius: 10px; cursor: pointer;
 }
+
+/* 部位別まとめコピー（選択シート）: iOS の選択リスト準拠のチェックマーク円 */
+.sheet-back {
+  background: none; border: none; color: var(--accent);
+  font-size: 15px; font-weight: 500; padding: 0 0 12px; cursor: pointer;
+  display: block; text-align: left;
+}
+.sheet-sub { font-size: 13px; color: var(--muted); margin-bottom: 6px; line-height: 1.5; }
+.sel-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 4px; border-bottom: 0.5px solid var(--separator); cursor: pointer;
+}
+.sel-row:last-child { border-bottom: none; }
+.sel-main { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.sel-name { font-size: 16px; font-weight: 500; }
+.sel-sets { font-size: 12px; color: var(--muted); }
+.sel-check {
+  width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+  border: 1.5px solid var(--muted);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+.sel-row.on .sel-check { background: var(--accent); border-color: var(--accent); }
+.sel-row.on .sel-check::after {
+  content: ""; width: 6px; height: 11px; margin-top: -3px;
+  border: solid #fff; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.sel-row.added { opacity: 0.45; cursor: default; }
+.sel-row.added .sel-check { background: var(--fill); border-color: transparent; }
+.sel-add { margin: 16px 0 0; }
+.primary-btn:disabled { opacity: 0.5; }
 
 /* タイマーバー（#view とタブバーの間に挟まる通常フロー要素） */
 #timer-bar {

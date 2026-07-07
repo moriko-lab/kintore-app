@@ -72,6 +72,17 @@ function prevEntry(exId, date) {
   return null;
 }
 
+// date より前で part の種目を含む直近セッションの、その部位のエントリ一覧を返す。未実施は null
+function partPrevSession(part, date) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const s = state.sessions[i];
+    if (s.date >= date) continue;
+    const entries = s.entries.filter(e => exPart(e.exId) === part);
+    if (entries.length) return { date: s.date, entries };
+  }
+  return null;
+}
+
 // 部位の最終実施時刻（実施時刻の記録がない古いデータはその日の 0:00 とみなす）。未実施は null
 function partLastTs(part) {
   for (let i = state.sessions.length - 1; i >= 0; i--) {
@@ -458,7 +469,9 @@ function openExercisePicker(session) {
         ${prev ? `<button class="copy-btn" data-id="${ex.id}">前回コピー</button>` : ''}
       </div>`;
     }).join('');
-    return `<h3 class="pick-part">${part}</h3>${rows}`;
+    // 部位単位の前回記録があれば、見出し右に一括コピーの入口を置く
+    const partPrev = partPrevSession(part, session.date);
+    return `<div class="pick-part-row"><h3 class="pick-part">${part}</h3>${partPrev ? `<button class="part-copy-btn" data-part="${part}">前回まとめて</button>` : ''}</div>${rows}`;
   }).join('');
 
   const modal = openModal(`
@@ -490,6 +503,7 @@ function openExercisePicker(session) {
   modal.querySelectorAll('.copy-btn').forEach(b => b.onclick = e => {
     e.stopPropagation(); addEntry(Number(b.dataset.id), true);
   });
+  modal.querySelectorAll('.part-copy-btn').forEach(b => b.onclick = () => openPartCopySheet(session, b.dataset.part));
   modal.querySelectorAll('.pick-row').forEach(r => r.onclick = () => addEntry(Number(r.dataset.id), false));
 
   modal.querySelector('#new-ex-add').onclick = async () => {
@@ -501,6 +515,66 @@ function openExercisePicker(session) {
     const id = await db.add('exercises', { name, part, bw });
     await reloadData();
     await addEntry(id, false);
+  };
+}
+
+// ---------- 部位別まとめコピー ----------
+// 前回その部位でやった種目を、選択式のシートで一括追加する。
+// 暗黙の全コピーではなく「前回メニューのプレビュー + 選択」にすることで、
+// やめた種目まで機械的に複製されるのを防ぐ。ここで外した種目は今日の記録に
+// 残らないため、次回以降の「前回メニュー」からも自然に消えていく（自浄性）
+
+function openPartCopySheet(session, part) {
+  const prev = partPrevSession(part, session.date);
+  if (!prev) return;
+  // 既定は全選択（追加済みの種目は選択対象から除外してグレー表示）
+  const selected = new Set(
+    prev.entries.filter(en => !session.entries.some(e => e.exId === en.exId)).map(en => en.exId)
+  );
+  const rowsHtml = prev.entries.map(en => {
+    const added = session.entries.some(e => e.exId === en.exId);
+    const bw = exIsBw(en.exId);
+    return `<div class="sel-row${added ? ' added' : ' on'}" data-id="${en.exId}">
+      <span class="sel-check"></span>
+      <div class="sel-main">
+        <span class="sel-name">${esc(exName(en.exId))}${bw ? '<span class="bw-tag">自重</span>' : ''}</span>
+        <span class="sel-sets">${added ? '今日の記録に追加済み' : setsSummary(en.sets, bw)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  const modal = openModal(`
+    <button class="sheet-back" id="sel-back">&#8249; 種目を追加</button>
+    <h2>${part}の前回メニュー</h2>
+    <p class="sheet-sub">${fmtShortDate(prev.date)} の記録。チェックを外した種目は追加されません</p>
+    <div class="sel-list">${rowsHtml}</div>
+    <button class="primary-btn sel-add" id="sel-add"></button>
+  `);
+
+  const $add = modal.querySelector('#sel-add');
+  const refresh = () => {
+    $add.textContent = selected.size > 0 ? `${selected.size}種目をまとめて追加` : '種目を選択してください';
+    $add.disabled = selected.size === 0;
+  };
+  refresh();
+
+  modal.querySelectorAll('.sel-row:not(.added)').forEach(row => row.onclick = () => {
+    const id = Number(row.dataset.id);
+    selected.has(id) ? selected.delete(id) : selected.add(id);
+    row.classList.toggle('on', selected.has(id));
+    refresh();
+  });
+
+  modal.querySelector('#sel-back').onclick = () => openExercisePicker(session);
+
+  $add.onclick = async () => {
+    for (const en of prev.entries) {
+      if (!selected.has(en.exId)) continue;
+      session.entries.push({ exId: en.exId, sets: en.sets.map(s => ({ w: s.w, r: s.r, done: false })) });
+    }
+    await saveSession(session);
+    closeModal();
+    render();
   };
 }
 
