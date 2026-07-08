@@ -247,9 +247,11 @@ button:active { opacity: 0.55; }
 }
 .pick-part { font-size: 13px; font-weight: 600; color: var(--muted); margin: 16px 0 4px; }
 .pick-part-row .pick-part { margin: 0; }
+/* 部位単位の一括コピーは種目単位の「前回コピー」(tinted) と区別するため
+   塗りつぶし (filled) にする。強いアクション = 強い見た目の階層付け */
 .part-copy-btn {
   padding: 6px 12px; font-size: 12px; font-weight: 600;
-  background: var(--accent-tint); color: var(--accent);
+  background: var(--accent); color: var(--accent-fg);
   border: none; border-radius: 20px; cursor: pointer;
 }
 .pick-row {
